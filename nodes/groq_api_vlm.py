@@ -1,16 +1,13 @@
 import os
-import json
 import random
+import json
 import numpy as np
 import torch
-from colorama import init, Fore, Style
-from configparser import ConfigParser
-from groq import Groq
-
-from ..utils.api_utils import make_api_request, load_prompt_options, get_prompt_content
-from ..utils.image_utils import encode_image, tensor_to_pil
-
-init()  # Initialize colorama
+from colorama import Fore, Style
+from utils.image_utils import tensor_to_pil, encode_image
+from utils.string_clean import process_text
+import configparser
+import requests
 
 class GroqAPIVLM:
     DEFAULT_PROMPT = "Use [system_message] and [user_input]"
@@ -25,21 +22,42 @@ class GroqAPIVLM:
     ]
     
     def __init__(self):
-        current_directory = os.path.dirname(os.path.realpath(__file__))
-        groq_directory = os.path.join(current_directory, 'groq')
-        config_path = os.path.join(groq_directory, 'GroqConfig.ini')
-        self.config = ConfigParser()
-        self.config.read(config_path)
-        self.api_key = self.config.get('API', 'key')
-        self.client = Groq(api_key=self.api_key)
-        
-        # Load prompt options
-        prompt_files = [
-            os.path.join(groq_directory, 'DefaultPrompts_VLM.json'),
-            os.path.join(groq_directory, 'UserPrompts_VLM.json')
-        ]
-        self.prompt_options = load_prompt_options(prompt_files)
-    
+        self.api_keys = self.load_api_keys()
+        self.current_key_index = 0
+        self.prompt_options = self.load_prompt_options()
+
+    def load_api_keys(self):
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+        keys = config['API_KEYS']['groq_keys'].split(',')
+        return [key.strip() for key in keys]
+
+    def get_next_api_key(self):
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        return self.api_keys[self.current_key_index]
+
+    def load_prompt_options(self):
+        try:
+            current_directory = os.path.dirname(os.path.realpath(__file__))
+            groq_directory = os.path.join(current_directory, 'groq')
+            prompt_files = [
+                os.path.join(groq_directory, 'DefaultPrompts_VLM.json'),
+                os.path.join(groq_directory, 'UserPrompts_VLM.json')
+            ]
+            prompt_options = {}
+            for file in prompt_files:
+                if os.path.exists(file):
+                    with open(file, 'r') as f:
+                        prompt_options.update(json.load(f))
+            return prompt_options
+        except Exception as e:
+            print(Fore.RED + f"Failed to load prompt options: {e}" + Style.RESET_ALL)
+            return {}
+
+    @staticmethod
+    def get_prompt_content(prompt_options, preset):
+        return prompt_options.get(preset, "")
+
     @classmethod
     def INPUT_TYPES(cls):
         try:
@@ -49,7 +67,7 @@ class GroqAPIVLM:
                 os.path.join(groq_directory, 'DefaultPrompts_VLM.json'),
                 os.path.join(groq_directory, 'UserPrompts_VLM.json')
             ]
-            prompt_options = load_prompt_options(prompt_files)
+            prompt_options = cls.load_prompt_options()
         except Exception as e:
             print(Fore.RED + f"Failed to load prompt options: {e}" + Style.RESET_ALL)
             prompt_options = {}
@@ -84,14 +102,13 @@ class GroqAPIVLM:
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
-    
+
         if preset == self.DEFAULT_PROMPT:
             system_message = system_message
         else:
-            system_message = get_prompt_content(self.prompt_options, preset)
-    
+            system_message = self.get_prompt_content(self.prompt_options, preset)
+
         url = 'https://api.groq.com/openai/v1/chat/completions'
-        headers = {'Authorization': f'Bearer {self.api_key}'}
         
         if image is not None and isinstance(image, torch.Tensor):
             # Process the image
@@ -127,10 +144,21 @@ class GroqAPIVLM:
             'seed': seed
         }
         
-        if stop:  # Only add stop if it's not empty
+        if stop:
             data['stop'] = stop
-        
-        #print(f"Sending request to {url} with data: {json.dumps(data, indent=4)} and headers: {headers}")
-        
-        assistant_message, success, status_code = make_api_request(data, headers, url, max_retries)
-        return assistant_message, success, status_code
+
+        for _ in range(max_retries):
+            try:
+                headers = {'Authorization': f'Bearer {self.api_keys[self.current_key_index]}'}
+                response = requests.post(url, headers=headers, json=data)
+                response.raise_for_status()
+                return response.json()['choices'][0]['message']['content'], True, response.status_code
+            except requests.exceptions.RequestException as e:
+                if 'rate limit' in str(e).lower():
+                    print(Fore.YELLOW + f"Rate limit reached for API key {self.current_key_index + 1}. Switching to next key." + Style.RESET_ALL)
+                    self.get_next_api_key()
+                else:
+                    print(Fore.RED + f"Error: {e}" + Style.RESET_ALL)
+            
+        print(Fore.RED + "Max retries reached. Unable to complete the request." + Style.RESET_ALL)
+        return "Max retries reached. Unable to complete the request.", False, "429 Too Many Requests"
