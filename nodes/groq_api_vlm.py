@@ -25,13 +25,22 @@ class GroqAPIVLM:
         self.api_keys = self.load_api_keys()
         self.current_key_index = 0
         self.prompt_options = self.load_prompt_options()
-
-    def load_api_keys(self):
+    def load_api_keys(self):  # Adjusted indentation
         config = configparser.ConfigParser()
-        config.read('config.ini')
-        keys = config['API_KEYS']['groq_keys'].split(',')
-        return [key.strip() for key in keys]
-
+        config_paths = [
+            'GroqConfig.ini',  # Current directory
+            os.path.join('nodes', 'groq', 'GroqConfig.ini'),  # Local path
+            '/root/comfy/ComfyUI/custom_nodes/ComfyUI-mnemic-nodes/nodes/groq/GroqConfig.ini'  # Modal path
+        ]
+        
+        for path in config_paths:
+            if os.path.exists(path):
+                config.read(path)
+                if 'API_KEYS' in config:
+                    keys = config['API_KEYS']['groq_keys'].split(',')
+                    return [key.strip() for key in keys]
+        
+        raise FileNotFoundError("GroqConfig.ini not found in any of the expected locations.")
     def get_next_api_key(self):
         self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         return self.api_keys[self.current_key_index]
