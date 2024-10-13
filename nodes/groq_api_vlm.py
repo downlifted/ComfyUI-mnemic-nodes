@@ -4,8 +4,8 @@ import json
 import numpy as np
 import torch
 from colorama import Fore, Style
-from utils.image_utils import tensor_to_pil, encode_image
-from utils.string_clean import process_text
+import sys
+from ..utils.image_utils import tensor_to_pil, encode_image
 import configparser
 import requests
 
