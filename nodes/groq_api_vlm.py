@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from colorama import Fore, Style
 import sys
+from ..utils.string_clean import process_text
 from ..utils.image_utils import tensor_to_pil, encode_image
 import configparser
 import requests
@@ -46,6 +47,7 @@ class GroqAPIVLM:
         
         # If no config file is found, use the provided default key
         return ["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"]
+
     def get_next_api_key(self):
         self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         return self.api_keys[self.current_key_index]
@@ -73,7 +75,7 @@ class GroqAPIVLM:
         return prompt_options.get(preset, "")
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def load_prompt_options_class(cls):
         try:
             current_directory = os.path.dirname(os.path.realpath(__file__))
             groq_directory = os.path.join(current_directory, 'groq')
@@ -81,11 +83,19 @@ class GroqAPIVLM:
                 os.path.join(groq_directory, 'DefaultPrompts_VLM.json'),
                 os.path.join(groq_directory, 'UserPrompts_VLM.json')
             ]
-            prompt_options = cls.load_prompt_options()
-        except Exception as e:
-            print(Fore.RED + f"Failed to load prompt options: {e}" + Style.RESET_ALL)
             prompt_options = {}
-    
+            for file in prompt_files:
+                if os.path.exists(file):
+                    with open(file, 'r') as f:
+                        prompt_options.update(json.load(f))
+            return prompt_options
+        except Exception as e:
+            print(f"Failed to load prompt options: {e}")
+            return {}
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        prompt_options = cls.load_prompt_options_class()
         return {
             "required": {
                 "model": (cls.VLM_MODELS, {"tooltip": "Select the Vision-Language Model (VLM) to use."}),
@@ -101,8 +111,8 @@ class GroqAPIVLM:
                 "stop": ("STRING", {"default": "", "tooltip": "Stop generation when the specified sequence is encountered."}),
                 "json_mode": ("BOOLEAN", {"default": False, "tooltip": "Enable JSON mode for structured output.\n\nIMPORTANT: Requires you to use the word 'JSON' in the prompt."}),
             }
-        }
-    
+        }    
+
     OUTPUT_NODE = True
     RETURN_TYPES = ("STRING", "BOOLEAN", "STRING")
     RETURN_NAMES = ("api_response", "success", "status_code")
