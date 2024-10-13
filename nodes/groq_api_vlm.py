@@ -18,6 +18,8 @@ class GroqAPIVLM:
     VLM_MODELS = [
         "llava-v1.5-7b-4096-preview",
         "llama-3.2-11b-vision-preview",
+        "llama-3.1-70b-versatile",
+        "gemma2-9b-it"
     ]
     
     def __init__(self):
