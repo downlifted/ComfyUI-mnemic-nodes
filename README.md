@@ -1,3 +1,8 @@
+THIS FORKED VERSION SIMPLY ADDS THE ABILITY TO ADD MORE THAN ONE API KEY, MAINLY IF YOU ARE DOING BATCHES OR HAVE MANY OF THESE NODES DOING DIFFERENT THINGS
+IT WILL SIMPLY SWITCH TO A NEW KEY - IK ITS A BIT GREYHAT BUT ITS NECISSARY FOR SOME USE CASES! 
+
+
+
 # Nodes for ComfyUI
 
 This repository hosts a collection of nodes developed for ComfyUI. It aims to share useful components that enhance the functionality of ComfyUI projects. Some nodes are forks or versions of  nodes from other packs, some are bespoke and useful, and some are experimental and are quite useless, so they have been marked with a `Caution` label in this document.
