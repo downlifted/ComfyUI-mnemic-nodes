@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from colorama import init, Fore, Style
 from configparser import ConfigParser
-from groq import Groq
+import requests
 
 from ..utils.api_utils import make_api_request, load_prompt_options, get_prompt_content
 
@@ -29,25 +29,53 @@ class GroqAPILLM:
         "llama-3.2-3b-preview",
         "llama-3.2-11b-text-preview",
         "llama-3.2-90b-text-preview",
-
     ]
     
     def __init__(self):
-        current_directory = os.path.dirname(os.path.realpath(__file__))
-        groq_directory = os.path.join(current_directory, 'groq')
-        config_path = os.path.join(groq_directory, 'GroqConfig.ini')
-        self.config = ConfigParser()
-        self.config.read(config_path)
-        self.api_key = self.config.get('API', 'key')
-        self.client = Groq(api_key=self.api_key)
-        
-        # Load prompt options
-        prompt_files = [
-            os.path.join(groq_directory, 'DefaultPrompts.json'),
-            os.path.join(groq_directory, 'UserPrompts.json')
+        self.api_keys = self.load_api_keys()
+        self.current_key_index = 0
+        self.prompt_options = self.load_prompt_options()
+
+    def load_api_keys(self):
+        config = ConfigParser()
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        groq_directory = os.path.join(current_dir, 'groq')
+        config_paths = [
+            os.path.join(groq_directory, 'GroqConfig.ini'),
+            os.path.join(current_dir, '..', 'groq', 'GroqConfig.ini')
         ]
-        self.prompt_options = load_prompt_options(prompt_files)
-    
+        
+        for path in config_paths:
+            if os.path.exists(path):
+                config.read(path)
+                if 'API_KEYS' in config:
+                    keys = config['API_KEYS']['groq_keys'].split(',')
+                    return [key.strip() for key in keys]
+        
+        # If no config file is found, use the provided default key
+        return ["default_api_key"]
+    def get_next_api_key(self):
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        return self.api_keys[self.current_key_index]
+
+    def load_prompt_options(self):
+        try:
+            current_directory = os.path.dirname(os.path.realpath(__file__))
+            groq_directory = os.path.join(current_directory, 'groq')
+            prompt_files = [
+                os.path.join(groq_directory, 'DefaultPrompts.json'),
+                os.path.join(groq_directory, 'UserPrompts.json')
+            ]
+            prompt_options = {}
+            for file in prompt_files:
+                if os.path.exists(file):
+                    with open(file, 'r') as f:
+                        prompt_options.update(json.load(f))
+            return prompt_options
+        except Exception as e:
+            print(Fore.RED + f"Failed to load prompt options: {e}" + Style.RESET_ALL)
+            return {}
+
     @classmethod
     def INPUT_TYPES(cls):
         try:
@@ -98,7 +126,6 @@ class GroqAPILLM:
             system_message = get_prompt_content(self.prompt_options, preset)
     
         url = 'https://api.groq.com/openai/v1/chat/completions'
-        headers = {'Authorization': f'Bearer {self.api_key}'}
         
         messages = [
             {"role": "system", "content": system_message},
@@ -117,7 +144,18 @@ class GroqAPILLM:
         if stop:  # Only add stop if it's not empty
             data['stop'] = stop
         
-        print(f"Sending request to {url} with data: {json.dumps(data, indent=4)} and headers: {headers}")
-        
-        assistant_message, success, status_code = make_api_request(data, headers, url, max_retries)
-        return assistant_message, success, status_code
+        for _ in range(max_retries):
+            try:
+                headers = {'Authorization': f'Bearer {self.api_keys[self.current_key_index]}'}
+                response = requests.post(url, headers=headers, json=data)
+                response.raise_for_status()
+                return response.json()['choices'][0]['message']['content'], True, response.status_code
+            except requests.exceptions.RequestException as e:
+                if 'rate limit' in str(e).lower():
+                    print(Fore.YELLOW + f"Rate limit reached for API key {self.current_key_index + 1}. Switching to next key." + Style.RESET_ALL)
+                    self.get_next_api_key()
+                else:
+                    print(Fore.RED + f"Error: {e}" + Style.RESET_ALL)
+            
+        print(Fore.RED + "Max retries reached. Unable to complete the request." + Style.RESET_ALL)
+        return "Max retries reached. Unable to complete the request.", False, "429 Too Many Requests"

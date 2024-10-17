@@ -30,12 +30,10 @@ class GroqAPIVLM:
     def load_api_keys(self):
         config = configparser.ConfigParser()
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        groq_directory = os.path.join(current_dir, 'groq')
         config_paths = [
-            os.path.join(current_dir, 'GroqConfig.ini'),
-            os.path.join(current_dir, 'groq', 'GroqConfig.ini'),
-            os.path.join(current_dir, '..', 'groq', 'GroqConfig.ini'),
-            '/root/comfy/ComfyUI/custom_nodes/ComfyUI-mnemic-nodes/nodes/groq/GroqConfig.ini',
-            r"C:\Users\bewiz\OneDrive\Desktop\AI\ComfyUI_windows_portable\ComfyUI\custom_nodes\ComfyUI-mnemic-nodes\nodes\groq\GroqConfig.ini"
+            os.path.join(groq_directory, 'GroqConfig.ini'),
+            os.path.join(current_dir, '..', 'groq', 'GroqConfig.ini')
         ]
         
         for path in config_paths:
@@ -46,7 +44,7 @@ class GroqAPIVLM:
                     return [key.strip() for key in keys]
         
         # If no config file is found, use the provided default key
-        return ["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"]
+        return ["default_api_key"]
 
     def get_next_api_key(self):
         self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
